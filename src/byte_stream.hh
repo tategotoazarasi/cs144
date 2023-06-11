@@ -5,15 +5,20 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
-
+#include <vector>
 class Reader;
 class Writer;
 
 class ByteStream
 {
 protected:
+  std::string buff {};
   uint64_t capacity_;
-  // Please add any additional state to the ByteStream here, and not to the Writer and Reader interfaces.
+  uint64_t rest = 0;
+  uint64_t pushed = 0;
+  uint64_t poped = 0;
+  bool closed = false;
+  bool err = false;
 
 public:
   explicit ByteStream( uint64_t capacity );

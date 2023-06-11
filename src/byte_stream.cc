@@ -1,77 +1,74 @@
+#include <sstream>
 #include <stdexcept>
 
 #include "byte_stream.hh"
 
 using namespace std;
 
-ByteStream::ByteStream( uint64_t capacity ) : capacity_( capacity ) {}
+ByteStream::ByteStream( uint64_t capacity ) : capacity_( capacity ), rest( capacity ) {}
 
 void Writer::push( string data )
 {
-  // Your code here.
-  (void)data;
+  uint64_t const len = min( data.size(), rest );
+  buff += data.substr( 0, len );
+  rest -= len;
+  pushed += len;
 }
 
 void Writer::close()
 {
-  // Your code here.
+  closed = true;
 }
 
 void Writer::set_error()
 {
-  // Your code here.
+  err = true;
 }
 
 bool Writer::is_closed() const
 {
-  // Your code here.
-  return {};
+  return closed;
 }
 
 uint64_t Writer::available_capacity() const
 {
-  // Your code here.
-  return {};
+  return rest;
 }
 
 uint64_t Writer::bytes_pushed() const
 {
-  // Your code here.
-  return {};
+  return pushed;
 }
 
 string_view Reader::peek() const
 {
-  // Your code here.
-  return {};
+  return buff;
 }
 
 bool Reader::is_finished() const
 {
-  // Your code here.
-  return {};
+  return buff.empty() && closed;
 }
 
 bool Reader::has_error() const
 {
-  // Your code here.
-  return {};
+  return err;
 }
 
 void Reader::pop( uint64_t len )
 {
-  // Your code here.
-  (void)len;
+  len = min( len, bytes_buffered() );
+  poped += len;
+  rest += len;
+  buff = buff.substr( len );
 }
 
 uint64_t Reader::bytes_buffered() const
 {
-  // Your code here.
-  return {};
+  return capacity_ - rest;
 }
 
 uint64_t Reader::bytes_popped() const
 {
-  // Your code here.
-  return {};
+  return poped;
 }
