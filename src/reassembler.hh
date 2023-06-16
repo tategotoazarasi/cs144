@@ -3,9 +3,15 @@
 #include "byte_stream.hh"
 
 #include <string>
+#include <unordered_map>
 
 class Reassembler
 {
+private:
+  std::unordered_map<uint64_t, char> m {};
+  uint64_t current_index = 0;
+  bool last_rcvd = false;
+
 public:
   /*
    * Insert a new substring to be reassembled into a ByteStream.
