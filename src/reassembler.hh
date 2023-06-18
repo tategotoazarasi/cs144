@@ -11,6 +11,7 @@ private:
   std::unordered_map<uint64_t, char> m {};
   uint64_t current_index = 0;
   bool last_rcvd = false;
+  uint64_t pending = 0;
 
 public:
   /*

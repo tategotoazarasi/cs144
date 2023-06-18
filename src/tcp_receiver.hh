@@ -6,6 +6,10 @@
 
 class TCPReceiver
 {
+private:
+  Wrap32 zero_point = Wrap32( 0 );
+  bool syn_received = false;
+
 public:
   /*
    * The TCPReceiver receives TCPSenderMessages, inserting their payload into the Reassembler

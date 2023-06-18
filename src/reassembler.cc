@@ -14,11 +14,13 @@ void Reassembler::insert( uint64_t first_index, string data, bool is_last_substr
       continue;
     }
     m[first_index + i] = data[i];
+    pending++;
   }
   ostringstream oss;
+
   while ( m.contains( current_index ) ) {
     oss << m[current_index];
-    m.erase( current_index );
+    pending--;
     current_index++;
   }
   string const str = oss.str();
@@ -32,5 +34,5 @@ void Reassembler::insert( uint64_t first_index, string data, bool is_last_substr
 
 uint64_t Reassembler::bytes_pending() const
 {
-  return m.size();
+  return pending;
 }
