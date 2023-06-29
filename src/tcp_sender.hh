@@ -9,9 +9,13 @@ class TCPSender
 {
   Wrap32 isn_;
   uint64_t initial_RTO_ms_;
-  std::deque<TCPSenderMessage> segments_outstanding = std::deque<TCPSenderMessage>();
-  std::deque<TCPSenderMessage> segments_to_sent = std::deque<TCPSenderMessage>();
+  std::deque<std::pair<uint64_t, TCPSenderMessage>> segments_outstanding
+    = std::deque<std::pair<uint64_t, TCPSenderMessage>>();
+  std::deque<std::pair<uint64_t, TCPSenderMessage>> segments_to_sent
+    = std::deque<std::pair<uint64_t, TCPSenderMessage>>();
   bool sync_sent = false;
+  Wrap32 zero_point;
+  uint64_t checkpoint = 0;
   uint16_t window_size = 1;
 
 public:
