@@ -3,20 +3,36 @@
 #include "byte_stream.hh"
 #include "tcp_receiver_message.hh"
 #include "tcp_sender_message.hh"
-#include <deque>
+#include <list>
+#include <unordered_set>
+#include <vector>
+
+struct Frame
+{
+  uint64_t checkpoint {};
+  uint64_t time {};
+  uint64_t expire_time {};
+  TCPSenderMessage msg;
+
+  bool operator<( const Frame& rhs ) const { return this->checkpoint < rhs.checkpoint; }
+  bool operator>( const Frame& rhs ) const { return this->checkpoint > rhs.checkpoint; }
+};
 
 class TCPSender
 {
   Wrap32 isn_;
   uint64_t initial_RTO_ms_;
-  std::deque<std::pair<uint64_t, TCPSenderMessage>> segments_outstanding
-    = std::deque<std::pair<uint64_t, TCPSenderMessage>>();
-  std::deque<std::pair<uint64_t, TCPSenderMessage>> segments_to_sent
-    = std::deque<std::pair<uint64_t, TCPSenderMessage>>();
+  uint64_t current_RTO_ms_;
+  std::list<Frame> segments_outstanding = std::list<Frame>();
+  std::priority_queue<Frame, std::vector<Frame>, std::greater<>> segments_to_sent
+    = std::priority_queue<Frame, std::vector<Frame>, std::greater<>>();
   bool sync_sent = false;
   Wrap32 zero_point;
   uint64_t checkpoint = 0;
   uint16_t window_size = 1;
+  uint64_t now = 0;
+  uint64_t in_flight_cnt = 0;
+  uint64_t retransmission_cnt = 0;
 
 public:
   /* Construct TCP sender with given default Retransmission Timeout and possible ISN */
