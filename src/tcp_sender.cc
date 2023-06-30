@@ -38,11 +38,19 @@ void TCPSender::push( Reader& outbound_stream )
 {
   string str;
   read( outbound_stream, window_size - sequence_numbers_in_flight(), str );
+  TCPSenderMessage sm;
   if ( str.empty() && sync_sent ) {
-    return;
+    if ( outbound_stream.is_finished() && sequence_numbers_in_flight() + 1 <= window_size ) {
+      sm = TCPSenderMessage { isn_, !sync_sent, Buffer {}, true };
+    } else {
+      return;
+    }
+  } else {
+    sm = TCPSenderMessage { isn_,
+                            !sync_sent,
+                            ( str.length() > 0 ) ? ( Buffer { string( str.begin(), str.end() ) } ) : Buffer {},
+                            outbound_stream.is_finished() };
   }
-  TCPSenderMessage const sm = TCPSenderMessage {
-    isn_, !sync_sent, ( str.length() > 0 ) ? ( Buffer { string( str.begin(), str.end() ) } ) : Buffer {}, false };
   if ( !sync_sent ) {
     sync_sent = true;
   }
