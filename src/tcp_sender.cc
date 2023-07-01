@@ -36,12 +36,16 @@ optional<TCPSenderMessage> TCPSender::maybe_send()
 
 void TCPSender::push( Reader& outbound_stream )
 {
+  if ( fin_sent ) {
+    return;
+  }
   string str;
   read( outbound_stream, window_size - sequence_numbers_in_flight(), str );
   TCPSenderMessage sm;
   if ( str.empty() && sync_sent ) {
     if ( outbound_stream.is_finished() && sequence_numbers_in_flight() + 1 <= window_size ) {
       sm = TCPSenderMessage { isn_, !sync_sent, Buffer {}, true };
+      fin_sent = true;
     } else {
       return;
     }
@@ -50,6 +54,7 @@ void TCPSender::push( Reader& outbound_stream )
                             !sync_sent,
                             ( str.length() > 0 ) ? ( Buffer { string( str.begin(), str.end() ) } ) : Buffer {},
                             outbound_stream.is_finished() };
+    fin_sent = outbound_stream.is_finished();
   }
   if ( !sync_sent ) {
     sync_sent = true;
@@ -62,29 +67,37 @@ void TCPSender::push( Reader& outbound_stream )
 
 TCPSenderMessage TCPSender::send_empty_message() const
 {
-  return TCPSenderMessage { segments_outstanding.empty() ? isn_
-                                                         : segments_outstanding.back().msg.seqno
-                                                             + segments_outstanding.back().msg.sequence_length(),
-                            false,
-                            {},
-                            false };
+  if ( segments_outstanding.empty() ) {
+    return TCPSenderMessage { isn_, false, {}, false };
+  }
+  Frame latest_frame = segments_outstanding.front();
+  for ( const auto& frame : segments_outstanding ) {
+    if ( frame.checkpoint > latest_frame.checkpoint ) {
+      latest_frame = frame;
+    }
+  }
+  return TCPSenderMessage { latest_frame.msg.seqno + latest_frame.msg.sequence_length(), false, {}, false };
 }
 
 void TCPSender::receive( const TCPReceiverMessage& msg )
 {
   window_size = msg.window_size;
-  if ( msg.ackno.has_value() && msg.ackno.value().unwrap( zero_point, checkpoint ) > max_checkpoint_in_flight() ) {
+  uint64_t const ack_no = msg.ackno->unwrap( zero_point, checkpoint );
+  if ( msg.ackno.has_value() && ack_no > max_checkpoint_in_flight() ) {
     return;
   }
-  while ( !segments_outstanding.empty()
-          && segments_outstanding.front().checkpoint <= msg.ackno->unwrap( zero_point, checkpoint ) ) {
-    if ( segments_outstanding.front().msg.SYN ) {
-      sync_sent = true;
+  for ( auto it = segments_outstanding.begin(); it != segments_outstanding.end(); ) {
+    if ( it->checkpoint <= ack_no ) {
+      if ( it->msg.SYN ) {
+        sync_sent = true;
+      }
+      current_RTO_ms_ = initial_RTO_ms_;
+      in_flight_cnt -= it->msg.sequence_length();
+      it = segments_outstanding.erase( it );
+      retransmission_cnt = 0;
+    } else {
+      ++it;
     }
-    current_RTO_ms_ = initial_RTO_ms_;
-    in_flight_cnt -= segments_outstanding.front().msg.sequence_length();
-    segments_outstanding.pop_front();
-    retransmission_cnt = 0;
   }
 }
 

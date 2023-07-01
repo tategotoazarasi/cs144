@@ -27,6 +27,7 @@ class TCPSender
   std::priority_queue<Frame, std::vector<Frame>, std::greater<>> segments_to_sent
     = std::priority_queue<Frame, std::vector<Frame>, std::greater<>>();
   bool sync_sent = false;
+  bool fin_sent = false;
   Wrap32 zero_point;
   uint64_t checkpoint = 0;
   uint16_t window_size = 1;
