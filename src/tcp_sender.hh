@@ -56,4 +56,5 @@ public:
   /* Accessors for use in testing */
   uint64_t sequence_numbers_in_flight() const;  // How many sequence numbers are outstanding?
   uint64_t consecutive_retransmissions() const; // How many consecutive *re*transmissions have happened?
+  uint64_t max_checkpoint_in_flight() const;
 };

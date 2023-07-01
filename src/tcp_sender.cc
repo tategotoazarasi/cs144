@@ -73,6 +73,9 @@ TCPSenderMessage TCPSender::send_empty_message() const
 void TCPSender::receive( const TCPReceiverMessage& msg )
 {
   window_size = msg.window_size;
+  if ( msg.ackno.has_value() && msg.ackno.value().unwrap( zero_point, checkpoint ) > max_checkpoint_in_flight() ) {
+    return;
+  }
   while ( !segments_outstanding.empty()
           && segments_outstanding.front().checkpoint <= msg.ackno->unwrap( zero_point, checkpoint ) ) {
     if ( segments_outstanding.front().msg.SYN ) {
@@ -100,4 +103,13 @@ void TCPSender::tick( const size_t ms_since_last_tick )
       ++it;
     }
   }
+}
+
+uint64_t TCPSender::max_checkpoint_in_flight() const
+{
+  uint64_t max_checkpoint = 0;
+  for ( const auto& it : segments_outstanding ) {
+    max_checkpoint = max( max_checkpoint, it.checkpoint );
+  }
+  return max_checkpoint;
 }
