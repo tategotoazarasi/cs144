@@ -10,19 +10,32 @@
 struct Frame
 {
   uint64_t checkpoint {};
-  uint64_t time {};
-  uint64_t expire_time {};
   TCPSenderMessage msg;
+  bool dont_back_off_rto = false;
 
   bool operator<( const Frame& rhs ) const { return this->checkpoint < rhs.checkpoint; }
   bool operator>( const Frame& rhs ) const { return this->checkpoint > rhs.checkpoint; }
+};
+
+class RetransmissionTimer
+{
+private:
+  bool running = false;
+
+public:
+  uint64_t now = 0;
+  uint64_t rto = 0;
+  void elapse( uint64_t time );
+  bool expired() const;
+  void run();
+  void shutdown();
+  void restart();
 };
 
 class TCPSender
 {
   Wrap32 isn_;
   uint64_t initial_RTO_ms_;
-  uint64_t current_RTO_ms_;
   std::list<Frame> segments_outstanding = std::list<Frame>();
   std::priority_queue<Frame, std::vector<Frame>, std::greater<>> segments_to_sent
     = std::priority_queue<Frame, std::vector<Frame>, std::greater<>>();
@@ -34,6 +47,7 @@ class TCPSender
   uint64_t now = 0;
   uint64_t in_flight_cnt = 0;
   uint64_t retransmission_cnt = 0;
+  RetransmissionTimer timer = RetransmissionTimer();
 
 public:
   /* Construct TCP sender with given default Retransmission Timeout and possible ISN */

@@ -9,9 +9,10 @@ using namespace std;
 TCPSender::TCPSender( uint64_t initial_RTO_ms, optional<Wrap32> fixed_isn )
   : isn_( fixed_isn.value_or( Wrap32 { random_device()() } ) )
   , initial_RTO_ms_( initial_RTO_ms )
-  , current_RTO_ms_( initial_RTO_ms )
   , zero_point( isn_ )
-{}
+{
+  timer.rto = initial_RTO_ms;
+}
 
 uint64_t TCPSender::sequence_numbers_in_flight() const
 {
@@ -31,6 +32,7 @@ optional<TCPSenderMessage> TCPSender::maybe_send()
   auto frame = segments_to_sent.top();
   segments_to_sent.pop();
   segments_outstanding.push_back( frame );
+  timer.run();
   return frame.msg;
 }
 
@@ -39,11 +41,12 @@ void TCPSender::push( Reader& outbound_stream )
   if ( fin_sent ) {
     return;
   }
+  uint64_t const ws = window_size > 0 ? window_size : 1;
   string str;
-  read( outbound_stream, window_size - sequence_numbers_in_flight(), str );
+  read( outbound_stream, min( TCPConfig::MAX_PAYLOAD_SIZE, ws - sequence_numbers_in_flight() ), str );
   TCPSenderMessage sm;
   if ( str.empty() && sync_sent ) {
-    if ( outbound_stream.is_finished() && sequence_numbers_in_flight() + 1 <= window_size ) {
+    if ( outbound_stream.is_finished() && sequence_numbers_in_flight() + 1 <= ws ) {
       sm = TCPSenderMessage { isn_, !sync_sent, Buffer {}, true };
       fin_sent = true;
     } else {
@@ -53,8 +56,9 @@ void TCPSender::push( Reader& outbound_stream )
     sm = TCPSenderMessage { isn_,
                             !sync_sent,
                             ( str.length() > 0 ) ? ( Buffer { string( str.begin(), str.end() ) } ) : Buffer {},
-                            outbound_stream.is_finished() };
-    fin_sent = outbound_stream.is_finished();
+                            ( str.size() + 1 ) <= ( ws - sequence_numbers_in_flight() )
+                              && outbound_stream.is_finished() };
+    fin_sent = sm.FIN;
   }
   if ( !sync_sent ) {
     sync_sent = true;
@@ -62,7 +66,10 @@ void TCPSender::push( Reader& outbound_stream )
   isn_ = isn_ + sm.sequence_length();
   checkpoint += sm.sequence_length();
   in_flight_cnt += sm.sequence_length();
-  segments_to_sent.push( Frame { checkpoint, now, now + current_RTO_ms_, sm } );
+  segments_to_sent.push( Frame { checkpoint, sm, window_size == 0 } );
+  if ( !outbound_stream.peek().empty() && ws - sequence_numbers_in_flight() > 0 ) {
+    push( outbound_stream );
+  }
 }
 
 TCPSenderMessage TCPSender::send_empty_message() const
@@ -91,7 +98,8 @@ void TCPSender::receive( const TCPReceiverMessage& msg )
       if ( it->msg.SYN ) {
         sync_sent = true;
       }
-      current_RTO_ms_ = initial_RTO_ms_;
+      timer.rto = initial_RTO_ms_;
+      timer.restart();
       in_flight_cnt -= it->msg.sequence_length();
       it = segments_outstanding.erase( it );
       retransmission_cnt = 0;
@@ -103,18 +111,25 @@ void TCPSender::receive( const TCPReceiverMessage& msg )
 
 void TCPSender::tick( const size_t ms_since_last_tick )
 {
-  now += ms_since_last_tick;
-  for ( auto it = segments_outstanding.begin(); it != segments_outstanding.end(); ) {
-    if ( now >= it->expire_time ) {
-      current_RTO_ms_ *= 2;
-      it->time = now;
-      it->expire_time = now + current_RTO_ms_;
-      segments_to_sent.push( *it );
-      it = segments_outstanding.erase( it );
-      retransmission_cnt++;
-    } else {
-      ++it;
+  if ( segments_outstanding.empty() ) {
+    timer.shutdown();
+    return;
+  }
+  timer.elapse( ms_since_last_tick );
+  if ( timer.expired() ) {
+    auto frame = segments_outstanding.begin();
+    for ( auto it = segments_outstanding.begin(); it != segments_outstanding.end(); ++it ) {
+      if ( it->checkpoint < frame->checkpoint ) {
+        frame = it;
+      }
     }
+    segments_to_sent.push( *frame );
+    if ( !frame->dont_back_off_rto ) {
+      timer.rto *= 2;
+    }
+    segments_outstanding.erase( frame );
+    retransmission_cnt++;
+    timer.restart();
   }
 }
 
@@ -125,4 +140,38 @@ uint64_t TCPSender::max_checkpoint_in_flight() const
     max_checkpoint = max( max_checkpoint, it.checkpoint );
   }
   return max_checkpoint;
+}
+
+void RetransmissionTimer::elapse( uint64_t time )
+{
+  if ( running ) {
+    this->now += time;
+  }
+}
+
+bool RetransmissionTimer::expired() const
+{
+  if ( running ) {
+    return this->now >= this->rto;
+  }
+  return false;
+}
+
+void RetransmissionTimer::run()
+{
+  if ( !running ) {
+    running = true;
+    this->now = 0;
+  }
+}
+
+void RetransmissionTimer::shutdown()
+{
+  running = false;
+}
+
+void RetransmissionTimer::restart()
+{
+  running = true;
+  this->now = 0;
 }
