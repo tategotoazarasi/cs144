@@ -42,18 +42,20 @@ optional<InternetDatagram> NetworkInterface::recv_frame( const EthernetFrame& fr
         if ( !parse( msg, frame.payload ) ) {
           return {};
         }
-        if ( msg.sender_ethernet_address == ETHERNET_BROADCAST ) {
-          break;
-        }
-        arp_table[msg.sender_ip_address] = pair<uint64_t, EthernetAddress> {
-          now + static_cast<uint64_t>( 30 * 1000 ), msg.sender_ethernet_address };
-        for ( auto it = frames_waiting_for_arp.begin(); it != frames_waiting_for_arp.end(); ) {
-          if ( it->second.ipv4_numeric() == msg.sender_ip_address ) {
-            frames_to_sent.push_back( generate_frame( it->first, it->second ) );
-            it = frames_waiting_for_arp.erase( it );
-          } else {
-            ++it;
-          };
+        if ( msg.sender_ethernet_address != ETHERNET_BROADCAST && msg.sender_ethernet_address != ARP_BROADCAST ) {
+          arp_table[msg.sender_ip_address] = pair<uint64_t, EthernetAddress> {
+            now + static_cast<uint64_t>( 30 * 1000 ), msg.sender_ethernet_address };
+          if ( pending_arp.contains( msg.sender_ip_address ) ) {
+            pending_arp.erase( msg.sender_ip_address );
+          }
+          for ( auto it = frames_waiting_for_arp.begin(); it != frames_waiting_for_arp.end(); ) {
+            if ( it->second.ipv4_numeric() == msg.sender_ip_address ) {
+              frames_to_sent.push_back( generate_frame( it->first, it->second ) );
+              it = frames_waiting_for_arp.erase( it );
+            } else {
+              ++it;
+            };
+          }
         }
         if ( msg.opcode == ARPMessage::OPCODE_REQUEST && msg.target_ip_address == ip_address_.ipv4_numeric()
              && ( msg.target_ethernet_address == ethernet_address_
@@ -95,6 +97,13 @@ void NetworkInterface::tick( const size_t ms_since_last_tick )
       ++it;
     }
   }
+  for ( auto it = pending_arp.begin(); it != pending_arp.end(); ) {
+    if ( it->second <= now ) {
+      it = pending_arp.erase( it );
+    } else {
+      ++it;
+    }
+  }
 }
 
 optional<EthernetFrame> NetworkInterface::maybe_send()
@@ -114,6 +123,9 @@ optional<EthernetFrame> NetworkInterface::maybe_send()
 
 void NetworkInterface::arp_query( const Address& addr )
 {
+  if ( pending_arp.contains( addr.ipv4_numeric() ) ) {
+    return;
+  }
   arp_to_sent.push_back(
     EthernetFrame { EthernetHeader { ETHERNET_BROADCAST, ethernet_address_, EthernetHeader::TYPE_ARP },
                     serialize( ARPMessage { ARPMessage::TYPE_ETHERNET,
@@ -125,6 +137,7 @@ void NetworkInterface::arp_query( const Address& addr )
                                             ip_address_.ipv4_numeric(),
                                             ARP_BROADCAST,
                                             addr.ipv4_numeric() } ) } );
+  pending_arp[addr.ipv4_numeric()] = now + static_cast<uint64_t>( 5 * 1000 );
 }
 
 EthernetFrame NetworkInterface::generate_frame( const InternetDatagram& dgram, const Address& next_hop )
