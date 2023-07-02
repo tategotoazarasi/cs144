@@ -57,7 +57,8 @@ optional<InternetDatagram> NetworkInterface::recv_frame( const EthernetFrame& fr
         }
         if ( msg.opcode == ARPMessage::OPCODE_REQUEST && msg.target_ip_address == ip_address_.ipv4_numeric()
              && ( msg.target_ethernet_address == ethernet_address_
-                  || msg.target_ethernet_address == ETHERNET_BROADCAST ) ) {
+                  || msg.target_ethernet_address == ETHERNET_BROADCAST
+                  || msg.target_ethernet_address == ARP_BROADCAST ) ) {
           arp_to_sent.push_back( EthernetFrame {
             EthernetHeader { msg.sender_ethernet_address, ethernet_address_, EthernetHeader::TYPE_ARP },
             serialize( ARPMessage { ARPMessage::TYPE_ETHERNET,
@@ -122,7 +123,7 @@ void NetworkInterface::arp_query( const Address& addr )
                                             ARPMessage::OPCODE_REQUEST,
                                             ethernet_address_,
                                             ip_address_.ipv4_numeric(),
-                                            { 0, 0, 0, 0, 0, 0 },
+                                            ARP_BROADCAST,
                                             addr.ipv4_numeric() } ) } );
 }
 
