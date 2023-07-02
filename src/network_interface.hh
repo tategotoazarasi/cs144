@@ -4,12 +4,29 @@
 #include "ethernet_frame.hh"
 #include "ipv4_datagram.hh"
 
+#include <functional>
 #include <iostream>
 #include <list>
 #include <optional>
 #include <queue>
 #include <unordered_map>
 #include <utility>
+
+struct AddressHash
+{
+  std::size_t operator()( const Address& address ) const
+  {
+    // 使用IP地址和端口号的哈希组合作为键的哈希值
+    auto ip_port = address.ip_port();
+    std::hash<std::string> const stringHash;
+    std::hash<uint16_t> const uint16Hash;
+    std::size_t hash = stringHash( ip_port.first );
+    hash ^= uint16Hash( ip_port.second ) + 0x9e3779b9 + ( hash << 6 ) + ( hash >> 2 );
+    return hash;
+  }
+};
+
+using ARPTable = std::unordered_map<uint32_t, std::pair<uint64_t, EthernetAddress>>;
 
 // A "network interface" that connects IP (the internet layer, or network layer)
 // with Ethernet (the network access layer, or link layer).
@@ -40,6 +57,16 @@ private:
 
   // IP (known as Internet-layer or network-layer) address of the interface
   Address ip_address_;
+
+  ARPTable arp_table = ARPTable();
+  uint64_t now = 0;
+  std::list<EthernetFrame> arp_to_sent = std::list<EthernetFrame>();
+  std::list<EthernetFrame> frames_to_sent = std::list<EthernetFrame>();
+  std::list<std::pair<InternetDatagram, Address>> frames_waiting_for_arp
+    = std::list<std::pair<InternetDatagram, Address>>();
+
+  EthernetFrame generate_frame( const InternetDatagram& dgram, const Address& next_hop );
+  void arp_query( const Address& addr );
 
 public:
   // Construct a network interface with given Ethernet (network-access-layer) and IP (internet-layer)
