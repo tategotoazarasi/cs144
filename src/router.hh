@@ -2,6 +2,7 @@
 
 #include "network_interface.hh"
 
+#include <list>
 #include <optional>
 #include <queue>
 
@@ -48,12 +49,36 @@ public:
   }
 };
 
+struct MatchResult
+{
+  uint8_t prefix_length;
+  std::optional<Address> next_hop;
+  size_t interface_num;
+  bool null_result = false;
+};
+
+class RoutingTableItem
+{
+private:
+  uint32_t prefix_;
+  uint32_t mask_;
+  uint8_t prefix_length_;
+  std::optional<Address> next_hop_;
+  size_t interface_num_;
+
+public:
+  RoutingTableItem( uint32_t prefix, uint8_t prefix_length, std::optional<Address> next_hop, size_t interface_num );
+  MatchResult match( uint32_t ip );
+};
+
 // A router that has multiple network interfaces and
-// performs longest-prefix-match routing between them.
+// performs longest-prefix_-match routing between them.
 class Router
 {
   // The router's collection of network interfaces
   std::vector<AsyncNetworkInterface> interfaces_ {};
+  std::list<RoutingTableItem> routing_table_ = std::list<RoutingTableItem>();
+  MatchResult match( uint32_t ip );
 
 public:
   // Add an interface to the router
@@ -78,7 +103,7 @@ public:
   // maybe_receive() method to consume every incoming datagram and
   // send it on one of interfaces to the correct next hop. The router
   // chooses the outbound interface and next-hop as specified by the
-  // route with the longest prefix_length that matches the datagram's
+  // route with the longest prefix_length_ that matches the datagram's
   // destination address.
   void route();
 };
